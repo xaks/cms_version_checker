@@ -13,16 +13,26 @@ use Log::Log4perl qw(:easy);
 
 Log::Log4perl->easy_init($ERROR);
 
+# Usage:
+#   perl cms_version_check.pl --directory /path/to/wordpress
+# supports relative path directories:
+#   perl cms_version_check.pl --directories ./
+# supports multiple directories:
+#   perl cms_version_check.pl --directories html/blog --directory html/magazine
+# supports short flags
+#   perl cms_version_check.pl -d html
+
 my @DIRECTORIES;
 my @directory_opts;
+my $USAGE = "Usage: perl $0 --directory dir1 [--directory dir2]";
 
-# Usage:
-# perl cms_version_check.pl --directory wordpress
-# supports multiple directories:
-# perl cms_version_check.pl --directories html/blog --directory html/magazine
 GetOptions(
     "directory=s" => \@directory_opts
-) or die "Usage: perl $0 --directory dir1 [--directory dir2]";
+) or die $USAGE;
+
+if (! scalar @directory_opts ) {
+    die "no directory specified\n$USAGE";
+}
 
 # append current working directory to directory options otherwise
 # relative directories (e.g. passed by tab completion aren't searched
@@ -41,6 +51,8 @@ print Dumper(\@DIRECTORIES);
 # that way, multiple find commands do not need to be run;
 # stat'ing files and dirs is probably slow, compared to regex matching strings
 
+# WordPress version info is stored like the following line:
+# $wp_version = '4.7.2';
 my $wordpress_search_opts = {
     path          => 'wp-includes',
     file          => 'version.php',
@@ -48,10 +60,12 @@ my $wordpress_search_opts = {
 };
 
 # https://www.drupal.org/docs/7/choosing-a-drupal-version/overview
+# Drupal 8 version info is stored like the following line:
+# const VERSION = '8.2.5';
 my $drupal_8_search_opts = {
-    path          => 'includes',
-    file          => 'bootstrap.inc',
-    search_string => '$wp_version',
+    path          => 'core/lib',
+    file          => 'Drupal.php',
+    search_string => 'const VERSION',
 };
 
 my @cms_targets = ( $wordpress_search_opts, $drupal_8_search_opts );
@@ -59,7 +73,8 @@ print Dumper(@cms_targets);
 
 foreach my $search_opts (@cms_targets) {
     my @files = find_files($search_opts);
-    print Dumper(\@files);
+    #print Dumper(\@files);
+    version_search(\@files, $search_opts);
 }
 
 sub find_files {
@@ -80,9 +95,9 @@ sub find_files {
                 && $_ eq "$file_name"
             )
             {
-                print "$File::Find::dir\n";
-                print "$File::Find::name\n";
-                print "$_\n";
+                #print "$File::Find::dir\n";
+                #print "$File::Find::name\n";
+                #print "$_\n";
                 push( @found_files, $File::Find::name );
             }
         },
@@ -92,16 +107,18 @@ sub find_files {
 }
 
 sub version_search {
-    my @files;
+    my ($files, $search_opts) = @_;
+
+    my $search_string = $search_opts->{search_string};
+
     # grep through each matching file for version data
-    foreach my $file (@files) {
+    foreach my $file (@{$files}) {
         open my $fh, '<', $file or ERROR("Can't open file: " . $EVAL_ERROR);
         while (my $line = <$fh>) {
+            #print $line;
             chomp $line;
 
-            # wp-version is stored like the following line:
-            # $wp_version = '4.7.2';
-            if ($line =~ m/^\$wp_version/) {
+            if ($line =~ m/^\Q$search_string\E/) {
                 print "$file\n$line\n";
 
                 # last to skip reading rest of file
