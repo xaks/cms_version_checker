@@ -65,7 +65,7 @@ my $wordpress_search_opts = {
 my $drupal_8_search_opts = {
     path          => 'core/lib',
     file          => 'Drupal.php',
-    search_string => 'const VERSION',
+    search_string => '  const VERSION',
 };
 
 my @cms_targets = ( $wordpress_search_opts, $drupal_8_search_opts );
