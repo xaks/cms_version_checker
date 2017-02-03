@@ -11,24 +11,40 @@ use File::Find;
 use Getopt::Long qw(GetOptions);
 use Log::Log4perl qw(:easy);
 
-Log::Log4perl->easy_init($ERROR);
-
 # Usage:
 #   perl cms_version_check.pl --directory /path/to/wordpress
 # supports relative path directories:
-#   perl cms_version_check.pl --directories ./
+#   perl cms_version_check.pl --directory ./
 # supports multiple directories:
-#   perl cms_version_check.pl --directories html/blog --directory html/magazine
+#   perl cms_version_check.pl --directory html/blog --directory html/magazine
 # supports short flags
 #   perl cms_version_check.pl -d html
+# supports multiple levels of verbosity (these are equivalent) 
+#   perl cms_version_check.pl -verbose -verbose -verbose -directory html
+#   perl cms_version_check.pl -v -v -v -d html
 
 my @DIRECTORIES;
 my @directory_opts;
 my $USAGE = "Usage: perl $0 --directory dir1 [--directory dir2]";
+my $verbose = 0; # default false
 
 GetOptions(
-    "directory=s" => \@directory_opts
+    "directory=s" => \@directory_opts,
+    "verbose+"     => \$verbose,
 ) or die $USAGE;
+
+if ($verbose == 1) {
+    Log::Log4perl->easy_init($INFO);
+}
+elsif ($verbose == 2) {
+    Log::Log4perl->easy_init($DEBUG);
+}
+elsif ($verbose == 3) {
+    Log::Log4perl->easy_init($TRACE);
+}
+else {
+    Log::Log4perl->easy_init($ERROR);
+}
 
 if (! scalar @directory_opts ) {
     die "no directory specified\n$USAGE";
@@ -37,19 +53,21 @@ if (! scalar @directory_opts ) {
 # append current working directory to directory options otherwise
 # relative directories (e.g. passed by tab completion aren't searched
 my $cwd = cwd();
+TRACE("current working directory: $cwd");
 foreach my $directory (@directory_opts) {
+    DEBUG("adding provided directory: $directory");
     push(@DIRECTORIES, $directory);
 
     # this could go in an if statement, but lazy
     # e.g. if $directory doesn't exist, prepend $cwd
+    DEBUG("adding generated directory: $cwd/$directory");
     push(@DIRECTORIES, "$cwd/$directory");
 }
-print Dumper(\@DIRECTORIES);
+INFO(Dumper(\@DIRECTORIES));
 
-# theoretically, for multiple CMSs, it might be faster to do a
-# @files = `find . -type f`
-# that way, multiple find commands do not need to be run;
-# stat'ing files and dirs is probably slow, compared to regex matching strings
+# path: directory tree that holds target file. no trailing or leading slash
+# file: file name that holds version data
+# search_string: literal string to search for version info
 
 # WordPress version info is stored like the following line:
 # $wp_version = '4.7.2';
@@ -68,14 +86,32 @@ my $drupal_8_search_opts = {
     search_string => '  const VERSION',
 };
 
-my @cms_targets = ( $wordpress_search_opts, $drupal_8_search_opts );
-print Dumper(@cms_targets);
+# drupal-7.54/includes/bootstrap.inc:define('VERSION', '7.54');
+my $drupal_7_search_opts = {
+    path          => 'includes',
+    file          => 'bootstrap.inc',
+    search_string => "define('VERSION', ",
+};
+
+my @cms_targets = (
+    $drupal_7_search_opts,
+    $drupal_8_search_opts,
+    $wordpress_search_opts,
+);
+
+DEBUG(Dumper(@cms_targets));
 
 foreach my $search_opts (@cms_targets) {
     my @files = find_files($search_opts);
-    #print Dumper(\@files);
+
+    INFO(Dumper(\@files));
     version_search(\@files, $search_opts);
 }
+
+# theoretically, for multiple CMSs, it might be faster to do a
+# @files = `find . -type f`
+# that way, multiple find commands do not need to be run;
+# stat'ing files and dirs is probably slow, compared to regex matching strings
 
 sub find_files {
     my ($search_opts) = @_;
@@ -95,9 +131,9 @@ sub find_files {
                 && $_ eq "$file_name"
             )
             {
-                #print "$File::Find::dir\n";
-                #print "$File::Find::name\n";
-                #print "$_\n";
+                TRACE("$File::Find::dir\n");
+                TRACE("$File::Find::name\n");
+                TRACE("$_\n");
                 push( @found_files, $File::Find::name );
             }
         },
